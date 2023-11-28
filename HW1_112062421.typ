@@ -171,7 +171,7 @@ group by clr;
 
     *Data Used*
     #table(columns: (auto,auto,auto, auto),
-    [*Topic*], [*Link*], [*File Used*], [*Table Name*],
+    [*Topic*], [*Link*], [*File Type*], [*Table Name*],
     [Health Facilities], [#link("https://data.humdata.org/dataset/hotosm_twn_health_facilities")[The Humanitarian Data Exchange]], `.gpkg`, [health_facilities],
     [Populated Places], [#link("https://data.humdata.org/dataset/hotosm_twn_populated_places")[The Humanitarian Data Exchange]], [`.shp`, `.prj`], [pop_places],
     [County and Municipality boundaries], [#link("https://gadm.org/")[Database of Global Administrative Areas]], `.shp`, [gadm41_TWN_2]
@@ -242,41 +242,80 @@ where ST_Within(p.geom, l.geom);
 
     Further customizations have been done with the map to give the outlines and markers appropriate coloring and labels.
 
-    #linebreak()
-    
-    #table(columns: (auto,auto),
-    [Counties], [Cities in such counties],
-    [#image("image.png")], [#image("Screenshot 2023-11-28 192824.png")])
+    #image("qBa_res.png")
     
   + *Road and Railway Analysis*
-    - *Preprocessing*
-      
-      We make sure we are only using major road data by checking the #link("https://wiki.openstreetmap.org/wiki/Key:highway")[openstreetmap tags]:
-      ```sql
-create table major_roads as
-select fid,name,geom,ST_Length(geom) as len
-from roads 
-where 
-  highway='motorway' or highway='trunk' or highway='primary'
-  and oneway is distinct from 'yes';
-      ```
-    - *Presentation*
-    
-      We calculate all the overworked roads, but the cities we want to display are too many to list on Google Maps. Hence, we limit to the top 2000 cities with high population contributions to narrow our search.
-      ```sql
-create table overworked_roads as
-select sum(population) as pop, ST_Length(r.geom) as span, 
-  sum(population)/ST_Length(r.geom) as density, r.geom
-from pop_corr p, major_roads r
-where ST_DWithin(r.geom, p.geom,0.05)
-group by r.fid,r.geom
-order by span,density desc;
 
-create table road_cities as
-select p.name, p.population, p.geom 
-from pop_corr p, major_roads r
-where ST_DWithin(r.geom, p.geom,0.05)
-order by p.population desc
-limit 2000;
-      ```
-  The result of the above analyses can be viewed on Google Maps here: https://www.google.com/maps/d/u/0/edit?mid=18XVn1RKnA1ir_OmNPkSUjEiDNXw4nOc&usp=sharing
+    *Data Used*
+    #table(columns: (auto,auto,auto, auto),
+    [*Topic*], [*Link*], [*File Types*], [*Table Name*],
+    [County and Municipality boundaries], [#link("https://gadm.org/")[Database of Global Administrative Areas]], [`.shp`, `.prj`], [gadm41_TWN_2],
+    [Major Roads in Taiwan],[#link("https://www.diva-gis.org/gdata")[DIVA-GIS]],[`.shp`, `.prj`],[twn_roads],
+    [Major Railroads in Taiwan],[#link("https://www.diva-gis.org/gdata")[DIVA-GIS]],[`.shp`, `.prj`],[twn_rails]
+    )
+    
+    In this part, we are looking at the railway-major road ratio of every major county. The ideal ratio for a county would be near 0.5, equally accessible by rail as it is by road.
+
+    *Map of Roads*
+    #image("qBb_init1.png")
+
+    #linebreak() #linebreak() #linebreak() #linebreak() #linebreak() #linebreak() #linebreak() #linebreak() #linebreak() #linebreak() #linebreak() #linebreak() #linebreak() 
+    *Map of Railroads*
+    #image("qBb_init2.png")
+    
+    *Preprocessing*
+    
+    First, we find all roads and railways which must be checked. We do not want non-operational transport methods.
+    ```sql
+create table op_rails as
+select geom from twn_rails where exs_descri = 'Operational';
+
+create table op_roads as
+select geom from twn_roads
+where
+  rtt_descri = 'Primary Route' or rtt_descri = 'Secondary Route';
+    ```
+
+    We prune columns from the counties table for the final result.
+    ```sql
+create table areas as
+select gid, name_2 as name, geom from gadm41_twn_2;
+    ```
+    
+    *Intersection Calculation*
+
+    The roads and rails are intersected with the counties, and grouped by gid to make sure that the count is correct.
+
+    ```sql
+create table road_count as
+select gid, count(r.geom) 
+from areas a, op_roads r
+where ST_Intersects(r.geom,a.geom)
+group by a.gid;
+
+create table rail_count as
+select gid, count(r.geom) 
+from areas a, op_rails r
+where ST_Intersects(r.geom,a.geom)
+group by a.gid;
+    ```
+
+    *Results*
+
+    The final touch is a three-way join on `gid`, which unifies the results together and provides a proper ratio we can analyze.
+
+    ```sql
+create table roads_rails_per_area as
+select a.gid, a.name,
+  r.count as road_count, l.count as rail_count,
+  cast(l.count as float)/cast(r.count as float) as ratio, a.geom
+from areas a,road_count r,rail_count l
+where a.gid = r.gid and a.gid = l.gid
+order by ratio;
+    ```
+
+    Since some of the ratios are common, this lets us color code the counties to show which regions have abnormal ratios.
+
+    #image("image.png")
+
+    

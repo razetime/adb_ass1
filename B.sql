@@ -33,24 +33,33 @@ from pop_places p, lowest_per_diversity l
 where ST_Within(p.geom, l.geom);
 
 -- Road/railway analysis
--- create table major_roads as
--- select fid,name,geom,ST_Length(geom) as len
--- from roads 
--- where 
---   highway='motorway' or highway='trunk' or highway='primary'
---   and oneway is distinct from 'yes';
+create table op_rails as
+select geom from twn_rails where exs_descri = 'Operational';
 
--- create table overworked_roads as
--- select sum(population) as pop, ST_Length(r.geom) as span, 
---   sum(population)/ST_Length(r.geom) as density, r.geom
--- from pop_corr p, major_roads r
--- where ST_DWithin(r.geom, p.geom,0.05)
--- group by r.fid,r.geom
--- order by span,density desc;
+create table op_roads as
+select geom from twn_roads
+where
+  rtt_descri = 'Primary Route' or rtt_descri = 'Secondary Route';
 
--- create table road_cities as
--- select p.name, p.population, p.geom 
--- from pop_corr p, major_roads r
--- where ST_DWithin(r.geom, p.geom,0.05)
--- order by p.population desc
--- limit 2000;
+create table areas as
+select gid, name_2 as name, geom from gadm41_twn_2;
+
+create table road_count as
+select gid, count(r.geom) 
+from areas a, op_roads r
+where ST_Intersects(r.geom,a.geom)
+group by a.gid;
+
+create table rail_count as
+select gid, count(r.geom) 
+from areas a, op_rails r
+where ST_Intersects(r.geom,a.geom)
+group by a.gid;
+
+create table roads_rails_per_area as
+select a.gid, a.name,
+  r.count as road_count, l.count as rail_count,
+  cast(l.count as float)/cast(r.count as float) as ratio, a.geom
+from areas a,road_count r,rail_count l
+where a.gid = r.gid and a.gid = l.gid
+order by ratio;
