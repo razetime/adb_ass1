@@ -72,10 +72,6 @@ group by clr;
 
 -- 6 second time difference, switching arguments of dwithin in query.
 
-postgis_lab=# explain analyze select clr,sum(popn_total) from nyc_census_blocks,station_colors
-postgis_lab-# where ST_Dwithin(nyc_census_blocks.geom,station_colors.geom,200)
-postgis_lab-# group by clr;
-
 --                          QUERY PLAN
 
 -- ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -103,6 +99,41 @@ postgis_lab-# group by clr;
 -- Population data: https://data.humdata.org/dataset/kontur-population-taiwan-province-of-china
 -- Road data: https://data.humdata.org/dataset/hotosm_twn_roads
 -- Health Facility data: https://data.humdata.org/dataset/hotosm_twn_health_facilities
+
+
+-- From A. b.
+
+--                                                            QUERY PLAN
+
+-- ---------------------------------------------------------------------------------------------------------------------------------
+--  Nested Loop  (cost=0.00..202218.76 rows=1668 width=48) (actual time=0.188..4520.257 rows=28793 loops=1)
+--    Join Filter: ((n.geom ~ c.geom) AND _st_contains(n.geom, c.geom))
+--    Rows Removed by Join Filter: 4975633
+--    ->  Seq Scan on nyc_census_blocks c  (cost=0.00..2020.94 rows=38794 width=268) (actual time=0.018..13.520 rows=38794 loops=1)
+--    ->  Materialize  (cost=0.00..16.93 rows=129 width=863) (actual time=0.000..0.009 rows=129 loops=38794)
+--          ->  Seq Scan on nyc_neighborhoods n  (cost=0.00..16.29 rows=129 width=863) (actual time=0.009..0.051 rows=129 loops=1)
+--  Planning Time: 0.194 ms
+--  Execution Time: 4524.065 ms
+-- (8 rows)
+
+select ST_Area(n.geom) as area, c.blkid, c.popn_total, n.gid as nid, n.name as nbname
+from nyc_census_blocks as c, nyc_neighborhoods as n
+where ST_Within(c.geom, n.geom);
+
+-- 300ms saved moving geometry to the beginning of the query.
+
+--                                                            QUERY PLAN
+
+-- ---------------------------------------------------------------------------------------------------------------------------------
+--  Nested Loop  (cost=0.00..202218.76 rows=1668 width=48) (actual time=0.252..4198.997 rows=28793 loops=1)
+--    Join Filter: ((n.geom ~ c.geom) AND _st_contains(n.geom, c.geom))
+--    Rows Removed by Join Filter: 4975633
+--    ->  Seq Scan on nyc_census_blocks c  (cost=0.00..2020.94 rows=38794 width=268) (actual time=0.029..12.542 rows=38794 loops=1)
+--    ->  Materialize  (cost=0.00..16.93 rows=129 width=863) (actual time=0.000..0.009 rows=129 loops=38794)
+--          ->  Seq Scan on nyc_neighborhoods n  (cost=0.00..16.29 rows=129 width=863) (actual time=0.015..0.059 rows=129 loops=1)
+--  Planning Time: 0.213 ms
+--  Execution Time: 4202.037 ms
+-- (8 rows)
 
 -- Health facility analysis
 create table pop_corr as
